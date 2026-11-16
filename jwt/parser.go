@@ -21,7 +21,6 @@ var (
 	ErrUnexpectedKeyType          = errors.New("unexpected public key type for jwt verification")
 	ErrInvalidSignature           = errors.New("jwt verification failed due to an invalid signature")
 	ErrTokenExpired               = errors.New("jwt token has expired")
-	ErrTokenNotYetValid           = errors.New("jwt token is not yet valid")
 	ErrTokenMalformed             = errors.New("jwt token is malformed")
 	ErrTokenInvalid               = errors.New("jwt token is not valid") // more generic error to catch any other cases
 	ErrTokenUnsupportedEncryption = errors.New("only rsa encrypted jwt tokens are supported")
@@ -50,9 +49,7 @@ func NewCognitoRSAParser(base64EncodedPublicKey map[string]string) (*CognitoRSAP
 		PublicKeys[kid] = publicKey
 	}
 
-	jwtParser := &jwt.Parser{
-		UseJSONNumber: true,
-	}
+	jwtParser := jwt.NewParser(jwt.WithJSONNumber())
 
 	return &CognitoRSAParser{
 		PublicKeys: PublicKeys,
@@ -95,7 +92,7 @@ func getEntityData(token *jwt.Token) (*permsdk.EntityData, error) {
 		return nil, ErrNoUserID
 	}
 
-	jwtGroups, ok := claims["cognito:groups"].([]interface{})
+	jwtGroups, ok := claims["cognito:groups"].([]any)
 	if !ok {
 		return nil, ErrNoGroups
 	}
@@ -127,7 +124,7 @@ func determineErrorType(err error) error {
 }
 
 // mapToStringArray maps from []interface{} to []string
-func mapToStringArray(jwtGroups []interface{}) []string {
+func mapToStringArray(jwtGroups []any) []string {
 	var groups []string
 	for _, cognitoGroup := range jwtGroups {
 		group, ok := cognitoGroup.(string)
@@ -159,7 +156,7 @@ func parsePublicKey(base64EncodedPublicKey string) (*rsa.PublicKey, error) {
 }
 
 // This function signature is required by the JWT library. The function is passed as a parameter to jwt.Parse
-func (p CognitoRSAParser) getKey(token *jwt.Token) (interface{}, error) {
+func (p CognitoRSAParser) getKey(token *jwt.Token) (any, error) {
 	// check for expected signing method on the token, before trying to verify it.
 	if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
 		return nil, ErrTokenUnsupportedEncryption
@@ -169,7 +166,7 @@ func (p CognitoRSAParser) getKey(token *jwt.Token) (interface{}, error) {
 }
 
 func (p CognitoRSAParser) getPublicSigningKey(token string) (*rsa.PublicKey, error) {
-	tokenHeader := strings.Split(token, ".")[0]
+	tokenHeader, _, _ := strings.Cut(token, ".")
 	pubKeyBytes, err := base64.RawURLEncoding.DecodeString(tokenHeader)
 	if err != nil {
 		return nil, err
